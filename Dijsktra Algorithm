@@ -1,0 +1,204 @@
+# use the network data (from NC) to create street network and then use Dijstra Shortest Path algorithm to find shortest distance between
+# two point
+
+from collections import deque        # for get_path
+import math
+import matplotlib.pyplot as plt
+import pqueue as pq
+# from pyproj import Proj, transform
+import sys
+import time
+
+# nad83_nc = Proj(init='epsg:32119')   # North American Datum / North Carolina
+# wgs84 = Proj(init='epsg:4326')       # World Geodetic System
+
+# convert meters to US survey feet
+def m2ft(x):
+    return 3937 * 3 * x / 3600.0
+
+# nc state plane to longitude/latitude
+def sp2ll(x, y):
+    lng, lat, ignore = transform(nad83_nc, wgs84, x, y, 0.0)
+    return lng, lat
+
+# longitude/latitude to nc state plane (in feet)
+def ll2sp(lng, lat):
+    x, y, ignore = transform(wgs84, nad83_nc, lng, lat, 0.0)
+    return m2ft(x), m2ft(y)
+
+def get_network(prefix):  # this function gets the data from .txt file (nodes and links)
+    nodes = dict()
+    links = dict()
+    nn = nl = 0
+    print('start reading', prefix + 'nodes.txt')
+    t1 = time.time()
+    for line in open(prefix + 'nodes.txt'):
+        a = line.split('\t')
+        if len(a) == 3 and a[0].isdigit():
+            node_id, xcoord, ycoord = int(a[0]), float(a[1]), float(a[2])
+            nodes[node_id] = (xcoord, ycoord)
+            links[node_id] = []
+            nn += 1
+    print('read %s nodes in %.3g secs' % (nn, time.time() - t1))
+    print('start reading', prefix + 'links.txt')
+    t1 = time.time()
+    for line in open(prefix + 'links.txt'):
+        a = line.split('\t')
+        if len(a) == 47 and a[0].isdigit():
+            name, direction, group = a[1], a[39], a[42]
+            link_id, speed, length, from_node, to_node = \
+                int(a[0]), int(a[23]), float(a[32]), int(a[44]), int(a[45])
+            speed = (15 if speed == 0 else speed)
+            params = [length / speed, group, name,length]       
+            if direction == 'To From':
+                from_node, to_node = to_node, from_node
+            links[from_node].append((to_node, params))
+            if direction == 'Bi-Directional':
+                links[to_node].append((from_node, params))
+            nl += 1
+    print('read %s links in %.3g secs' % (nl, time.time() - t1))
+    return nodes, links
+def centre(a,b):
+    return ((a[0]+b[0])/2, (a[1]+b[1])/2)
+# Dijkstra's single-source shortest path algorithm
+
+def dijkstra(nodes, adj, s, t):               # this function runs the dijkstra algorithm from given nodes data, adj (links data), starting (s) and ending (e) node
+    c1=centre(nodes[s],nodes[t])
+    radius=1.1*distance(c1,nodes[t])
+    V = set(nodes.keys())
+    d = dict()
+    pi = dict()
+    for v in V:
+        d[v] = float('inf')
+        pi[v] = None
+    d[s] = 0
+    S = set()
+    Q = pq.queue(init=d)
+    while pq.size(Q) != 0:
+        du, u = pq.dequeue(Q)
+        if u == t:              # found distance to destination
+            return d, pi
+        S.add(u)
+        for v, (w, group, name,l) in adj[u]:
+            if distance(c1, nodes[v]) < radius:
+                if d[v] > d[u] + w:
+                    d[v] = d[u] + w
+                    pq.update(Q, d[u] + w, v)
+                    pi[v] = u
+    return d, pi
+
+def get_path(pi, s, v):   #  given set of pi's(predecessors) of each node, s (starting node), v(ending node)
+    path = deque([v])
+    while s != v:
+        v = pi[v]
+        path.appendleft(v)
+    
+    return path
+
+def shortest_path(nodes_links, from_coord, to_coord):
+    nodes, links = nodes_links
+    n1, (x1, y1), d1 = find_node(nodes, from_coord)
+    n2, (x2, y2), d2 = find_node(nodes, to_coord)
+    print('start dijkstra from %s to %s' % (n1, n2))
+    t1 = time.time()
+    dd, pi = dijkstra(nodes, links, n1, n2)
+    print('completed in %.3g secs' % (time.time() - t1))
+    path = get_path(pi, n1, n2)
+    c=list(path)
+    d = 0
+    for i in range(len(c)-1):                  # this routine calculates the distance traveled
+        entry=c[i]
+        for j in range(len(links[entry])):
+            if links[entry][j][0]==c[i+1]:
+                d+=links[entry][j][1][3]
+    print(c)
+    return path,dd[n2],d                      # outputs path, time (dd) and distance(d)
+
+color = {'Interstate': 'red', 'Local': 'green', 'Secondary': 'blue',
+         'NC Highway': 'orange', 'Other': 'gray'}
+
+def draw_network(nodes_links):
+    nodes, links = nodes_links
+    xlist = {k : [] for k, v in color.items()}
+    ylist = {k : [] for k, v in color.items()}
+    for n1, values in links.items():
+        for n2, (weight, group, name,ch) in values:
+            if group not in color:
+                group = 'Other'
+            x1, y1 = nodes[n1]
+            x2, y2 = nodes[n2]
+            xlist[group].extend([x1, x2])
+            xlist[group].append(None)
+            ylist[group].extend([y1, y2])
+            ylist[group].append(None)
+    for group in color.keys():
+        plt.plot(xlist[group], ylist[group], color=color[group])
+
+def distance(x1_y1, x2_y2):
+    x1, y1 = x1_y1
+    x2, y2 = x2_y2
+    return math.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+
+def find_node(nodes, c1):
+    min_node = (-1, None, float('inf'))
+    for node_id, c2 in nodes.items():
+        if distance(c1, c2) < min_node[2]:
+            min_node = (node_id, c2, distance(c1, c2))
+    return min_node
+
+def draw_path(nodes_links, path, color, width):
+    nodes, links = nodes_links
+    x = list(map(lambda nid: nodes[nid][0], path))
+    y = list(map(lambda nid: nodes[nid][1], path))
+    plt.plot(x, y, color=color, lw=width)
+    plt.plot(x[0], y[0], '.', color=color, markersize=15.0)
+    plt.plot(x[-1], y[-1], '.', color=color, markersize=15.0)
+
+def main(prefix, a, b):
+    network = get_network(prefix)
+    # path = shortest_path(network, ll2sp(*a), ll2sp(*b))
+    path,dd,d = shortest_path(network, a, b)            # three outputs now 
+    print('Total travelling time is %.3g mins' % (dd*60/5280))  # prints travelling time
+    print('Total distance travelled is %.5g miles' % (d/5280))    # prints distance
+    draw_network(network)
+    draw_path(network, path, 'purple', 5)
+    plt.axes().set_aspect('equal', 'datalim')
+    plt.show()
+
+nc_state_capital = (-78.639068, 35.780293)
+# 1 East Edenton Street, Raleigh, NC
+
+blue_ridge_cinemas = (-78.702996, 35.788714)
+# 600 Blue Ridge Road, Raleigh, NC
+
+crabtree_valley_mall = (-78.679129, 35.840547)
+# 4325 Glenwood Avenue, Raleigh, NC
+
+nc_museum_of_art = (-78.702373, 35.810113)
+# 2110 Blue Ridge Road, Raleigh, NC
+
+eastgate_park = (-78.623193, 35.839593)
+# 4200 Quail Hollow Drive, Raleigh, NC
+
+carolina_pines_community_center = (-78.667271, 35.748561)
+# 2305 Lake Wheeler Road, Raleigh, NC
+
+cary_towne_center = (-78.760171, 35.77566)
+# 1105 Walnut Street, Cary, NC
+
+brueggers = (-78.665989, 35.787527)
+# 2302 Hillsborough Street, Raleigh, NC
+
+wolf_village_apts = (-78.684228, 35.787092)
+# 2730 Wolf Village Way, Raleigh, NC
+
+wendys = (-78.688038, 35.784668)
+# 3715 Western Boulevard, Raleigh, NC
+
+#wild_bird_center = (-79.024397, 35.936759)
+
+#nc_state_capital = (2107054.0615849686, 739117.91599955)
+#blue_ridge_cinemas = (2088083.6204701504, 742120.2622499447)
+#eastgate_park = (2111680.704316833, 760720.2975357313)
+#cary_towne_center =(2071138.5273137458, 737322.850223822)
+#nc_museum_of_art=(2088245.032399343, 749909.9313777696)
