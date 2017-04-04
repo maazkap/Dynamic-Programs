@@ -1,2 +1,2 @@
-# Dynamic-Programs
-This depository contains the dynamic programming algorithms applied to different applications
+# Dynamic-Programs using python
+This depository contains the dynamic programming algorithms applied to different applications. 
