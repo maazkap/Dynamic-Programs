@@ -1,0 +1,67 @@
+# the program uses a dynamic programming approach to minimize sum of setup and holding costs by efficiently scheduling 
+# production of different products given their setupcosts, holding costs and setup times and capacity of the shared machine
+
+import numpy as np
+import itertools
+def statespace(x,c,setupt):         # helper function which creates states at each period of dynamic program
+    states=[]
+    for m in itertools.product(range(0,int(max(x)+1)),repeat=len(x)):
+        if sum(m)<=c-min(setupt):
+            states.append(m)
+    return states
+def cost(x,c,setupt,setupc):         # given production (x), capacity (c), setup time (setupt) and setup cost (setupc), the function computes the total cost
+    totsetupt=sum(setupt[np.array(x)>0])
+    prodtime=sum(np.array(x))
+    if totsetupt+prodtime>c:
+        setcos=float('inf')
+    else:
+        setcos=sum(setupc[np.array(x)>0]) ### +sum(np.multiply(np.array(hc),np.array(x)))
+    return setcos    
+
+def f(t, I):                        # main recursive function which does the optimization by giving the minimum cost and production level
+    if (t,tuple(I)) in Memo:        # Memo saves the recursive function calls making program more effective if same function calls are also made later in the recursion
+        return Memo,Memo[t,tuple(I)],Solution[t,tuple(I)]   
+    elif t == T and len(I[I<0])==0:
+        Memo[t,tuple(I)]= sum(np.multiply(hc,I))
+        Solution[t,tuple(I)]=np.zeros(np.shape(d)[1])
+        return Memo,Memo[t,tuple(I)],Solution
+    elif len(I[I<0])>0:
+        Memo[t,tuple(I)]=float('inf')
+        Solution[t,tuple(I)]=np.zeros(np.shape(d)[1])
+        return Memo,Memo[t,tuple(I)],Solution
+    else:
+        min_expr = f(t + 1, I-d[t])[1]+sum(np.multiply(hc,I-d[t]))
+        sol=np.zeros(np.shape(d)[1])
+        for x in statespace(maxpro[t,:],c,setupt):
+            newinv=I-d[t]+x
+            if len(newinv[newinv<0])>0:
+                totcost=float('inf')
+            else:
+                totcost=cost(x,c,setupt,setupc)+sum(np.multiply(hc,newinv))+f(t+1,newinv)[1]
+            if totcost <= min_expr:
+                min_expr = totcost
+                sol=np.array(x)        
+        Memo[t,tuple(I)]=min_expr
+        Solution[t,tuple(I)]=np.array(sol)
+        return Memo,Memo[t,tuple(I)],Solution
+def main():
+    global d,setupt,setupc,hc,c,In,T,maxpro,Memo,Solution
+    d=np.array([[1,1],[1,1],[1,1]])                      # demand data for each job to be defined by user
+    setupc=np.array([2,3])                               # setup cost data for each job to be defined by user
+    setupt=np.array([1,1])                              # setup time data for each job to be defined by user
+    hc=np.array([0.25,0.3])                             # holding cost data for each job to be defined by user 
+    In=np.array([0,0])                                  # initial inventory date at the start of period 0
+    T=np.shape(d)[0]
+    c=10
+    Memo={}
+    Solution={}
+    maxdemand=np.cumsum(d[::-1],axis=0)[::-1]
+    adjc=c*np.ones(np.shape(d))-np.tile(setupt,(T,1))
+    maxpro=np.minimum(maxdemand,adjc)    
+    Table,Values,Solution=f(0,In)
+    Production=[]
+    Inven=In
+    for t in range(0,T):
+        Production.append(Solution[t,tuple(Inven)])
+        Inven=Inven-d[t]+Solution[t,tuple(Inven)]
+    return Values,Production
