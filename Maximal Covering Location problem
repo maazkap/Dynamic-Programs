@@ -1,0 +1,91 @@
+# Solving Maximal Covering Location Problem by Dynamic Programming
+# Data required
+# p=  number of resources/teams/abmulances to allocate
+# v= demand vector containing value gained if a node is satisfied
+# a= matrix which tells  which nodes are satisfied if an ambulance is allocated to each station
+
+import itertools
+import sys
+import xlrd
+import time
+
+def common_elementsremove(list1, list2):                # helper function to remove common sets which were elimnated in recursion
+    c=[element for element in list1 if element in list2]
+    for i in c:
+        list1.remove(i)
+    return list1
+    
+def generator(a,r):                  # helper function to generate sets of len less than or equal to r
+    m=[]
+    for i in range(1,r+1):
+        c=list(itertools.combinations(a,i))
+        m.append(c)
+    return [item for sublist in m for item in sublist]
+def check(l,n):                     # helper function to check which demand nodes are covered by sation n
+        index=[]
+        for i in range(0,len(l)):
+            if n in l[i]:
+                index.append(i)
+        return index
+def stationscoveringdemand(matrix,a):   # helper function to evaluate which nodes are being served by each station
+    matrixinverse=[]
+    for i in range(0,len(a[1])):
+        matrixinverse.insert(i,check(matrix,i))
+    return matrixinverse
+    
+def valuestations(stations,matrixinverse,v):   # helper station to evalute the value for a set of stations allocated
+        value=0
+        union=[]
+        for j in stations:
+            union=set(union).union(set((matrixinverse[j])))            
+        for val in union:
+            value=value+v[val]
+        return value
+def maxvalue(combin,matrixinverse,v):              # helper function to find the sequences lead to maximum value along with the sequences 
+    value=[]
+    m=[]
+    for i in range(0,len(combin)):
+        value.insert(i,valuestations(combin[i],matrixinverse,v))        
+    maxvalue=max(value)
+    indices = [i for i, v in enumerate(value) if v == maxvalue]
+    for i in range(0,len(indices)):
+        m.insert(0,combin[indices[i]])    
+    return maxvalue,m
+def optvalue(a,v,p):                   # main function to pack every knitty gritty thing to make it easier to run directly
+    t1=time.time()        
+    matrix=[]
+    for i in range(len(a)):
+        c=[index for index,value in enumerate(a[i]) if value <= 4]
+        matrix.append(c) 
+    matrixinverse=stationscoveringdemand(matrix,a)
+    z={}
+    J={}
+
+    for d in range(0,p+1):              # initialization z=0,J=[] for all values of n+1 stations
+        z[d,len(a[1])]=0
+        J[d,len(a[1])]=[]
+    s=[]
+    c=list(range(0,len(a[1])))         # generation of sets
+    for j in range(0,len(a[1])):
+        s.insert(j,c[j:])
+    for j in range(0,p+1):
+        for k in range(0,len(a[1])):
+            J[j,k]=generator(s[k],j)     
+    for j in range(0,p+1):
+        for k in range(0,len(a[1])):
+            common_elementsremove(J[j,k],J[j,k+1])
+ 
+    for k in range(1,p+1):                 # backtracking and recursion is done here
+        for j in range(len(a[1])-1,-1,-1):
+            if j+1<len(a[1]):
+                for m in range(0,len(J[k,j+1])):
+                    J[k,j].insert(0,J[k,j+1][m])
+                z[k,j],J[k,j]=maxvalue(J[k,j],matrixinverse,v)
+    print('time taken is %.3g secs' % (time.time() - t1))
+    print('the optimal value is %s' % (z[p,0]))
+    print('the optimal solution is %s' % (J[p,0]))
+    return (z[p,0],J[p,0])
+
+if __name__ == '__main__':               # defined if script in run using command prompt
+    if len(sys.argv) > 1:
+       optvalue(c,v,int(sys.argv[1]))
